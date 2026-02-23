@@ -4,6 +4,7 @@ import {
   useState,
   useImperativeHandle,
   forwardRef,
+  useCallback,
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { authService } from "../services/authService";
@@ -12,6 +13,20 @@ import ParentBridge from "@/types/smt-base-bridge/parent-bridge";
 interface BridgedIframeProps {
   src: string;
   className?: string;
+  onNavigation?: (
+    feature: string,
+    focus?: string,
+    extra?: string,
+    params?: Record<string, string | boolean | number>,
+  ) => Promise<
+    | {
+        feature: string;
+        focus?: string;
+        extra?: string;
+        params: Record<string, string | boolean | number>;
+      }
+    | undefined
+  >;
 }
 
 export interface BridgedIframeHandle {
@@ -26,14 +41,19 @@ export interface BridgedIframeHandle {
 export const BridgedIframe = forwardRef<
   BridgedIframeHandle,
   BridgedIframeProps
->(({ src, className }, ref) => {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+>(({ src, className, onNavigation }, ref) => {
+  const [iframe, setIframe] = useState<HTMLIFrameElement | null>(null);
   const bridgeRef = useRef<ParentBridge | null>(null);
   const [iframeSrc, setIframeSrc] = useState<string | null>(null);
   const navigate = useNavigate();
 
+  const setIframeRef = useCallback(
+    (element: HTMLIFrameElement | null) => {
+      setIframe(element);
+    },
+    [setIframe],
+  );
   useEffect(() => {
-    const iframe = iframeRef.current;
     if (!iframe) {
       console.error("Iframe not available");
       return;
@@ -52,6 +72,7 @@ export const BridgedIframe = forwardRef<
       return;
     }
 
+    const BridgeError = window.SMTBaseBridge.BridgeError;
     const childOrigin = new URL(src);
     console.log("parent", childOrigin.origin);
     // Create bridge using ParentBridge constructor
@@ -86,16 +107,8 @@ export const BridgedIframe = forwardRef<
         extra: string;
         params: Record<string, any>;
       };
-
-      if (
-        feature === "ar" ||
-        feature === "ar-face-filter" ||
-        feature === "ar-wearable" ||
-        feature === "ar-engaged" ||
-        feature === "eight-wall"
-      ) {
-        alert("Request to goto " + feature + " rejected");
-        return {};
+      if (onNavigation) {
+        return (await onNavigation?.(feature, focus, extra, params)) ?? {};
       }
       //supported route
       return { feature, focus, extra, params };
@@ -107,25 +120,6 @@ export const BridgedIframe = forwardRef<
       return {};
     });
 
-    // // Register alert handlers - not supported, return bridge error
-    // bridge.addRequestHandler("alert.notify", async () => {
-    //   return new BridgeError("NOT_SUPPORTED", "alert.notify is not supported");
-    // });
-
-    // bridge.addRequestHandler("alert.notifyDetail", async () => {
-    //   return new BridgeError(
-    //     "NOT_SUPPORTED",
-    //     "alert.notifyDetail is not supported",
-    //   );
-    // });
-
-    // bridge.addRequestHandler("alert.confirm", async () => {
-    //   return new BridgeError("NOT_SUPPORTED", "alert.confirm is not supported");
-    // });
-
-    // bridge.addRequestHandler("alert.inform", async () => {
-    //   return new BridgeError("NOT_SUPPORTED", "alert.inform is not supported");
-    // });
 
     console.log("Bridge handlers registered successfully");
 
@@ -134,18 +128,18 @@ export const BridgedIframe = forwardRef<
 
     // Cleanup
     return () => {
-      if (bridgeRef.current) {
-        bridgeRef.current.removeRequestHandler("session.get");
-        bridgeRef.current.removeRequestHandler("session.clear");
-        bridgeRef.current.removeRequestHandler("navigation.go");
-        bridgeRef.current.removeRequestHandler("navigation.open");
-        // bridgeRef.current.removeRequestHandler("alert.notify");
-        // bridgeRef.current.removeRequestHandler("alert.notifyDetail");
-        // bridgeRef.current.removeRequestHandler("alert.confirm");
-        // bridgeRef.current.removeRequestHandler("alert.inform");
+      if (bridge) {
+        bridge.removeRequestHandler("session.get");
+        bridge.removeRequestHandler("session.clear");
+        bridge.removeRequestHandler("navigation.go");
+        bridge.removeRequestHandler("navigation.open");
+        bridge.dispose();
+        if (bridgeRef.current === bridge) {
+          bridgeRef.current = null;
+        }
       }
     };
-  }, [src, navigate]);
+  }, [src, navigate, iframe, onNavigation]);
 
   // Expose goTo function via ref
   useImperativeHandle(ref, () => ({
@@ -164,7 +158,7 @@ export const BridgedIframe = forwardRef<
 
   return (
     <iframe
-      ref={iframeRef}
+      ref={setIframeRef}
       src={iframeSrc || undefined}
       className={className}
       title="Embedded Content"
