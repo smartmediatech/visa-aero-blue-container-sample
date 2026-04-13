@@ -16,6 +16,7 @@ interface BridgedIframeProps {
   onHeightChange?: (height: number) => void;
   onLoadError?: () => void;
   onSessionClear?: () => void | Promise<void>;
+  onSignInRequest?: () => Promise<{ refreshToken: string | null }>;
   onNavigation?: (
     feature: string,
     focus?: string,
@@ -44,7 +45,7 @@ export interface BridgedIframeHandle {
 export const BridgedIframe = forwardRef<
   BridgedIframeHandle,
   BridgedIframeProps
->(({ src, className, style, onHeightChange, onLoadError, onSessionClear, onNavigation }, ref) => {
+>(({ src, className, style, onHeightChange, onLoadError, onSessionClear, onSignInRequest, onNavigation }, ref) => {
   const [iframe, setIframe] = useState<HTMLIFrameElement | null>(null);
   const bridgeRef = useRef<ParentBridge | null>(null);
   const [iframeSrc, setIframeSrc] = useState<string | null>(null);
@@ -65,6 +66,8 @@ export const BridgedIframe = forwardRef<
   onLoadErrorRef.current = onLoadError;
   const onSessionClearRef = useRef(onSessionClear);
   onSessionClearRef.current = onSessionClear;
+  const onSignInRequestRef = useRef(onSignInRequest);
+  onSignInRequestRef.current = onSignInRequest;
   const onNavigationRef = useRef(onNavigation);
   onNavigationRef.current = onNavigation;
 
@@ -125,6 +128,16 @@ export const BridgedIframe = forwardRef<
       return {};
     });
 
+    // Register session.signIn handler — viewer requests the container to
+    // show the sign-in modal and returns the refresh token on success.
+    bridge.addRequestHandler("session.signIn", async () => {
+      console.log("session.signIn called");
+      if (onSignInRequestRef.current) {
+        return await onSignInRequestRef.current();
+      }
+      return { refreshToken: null };
+    });
+
     bridge.addRequestHandler("navigation.go", async ({ payload }) => {
       const { feature, focus, extra, params } = payload as {
         feature: string;
@@ -171,6 +184,7 @@ export const BridgedIframe = forwardRef<
       if (bridge) {
         bridge.removeRequestHandler("session.get");
         bridge.removeRequestHandler("session.clear");
+        bridge.removeRequestHandler("session.signIn");
         bridge.removeRequestHandler("navigation.go");
         bridge.removeRequestHandler("navigation.open");
         bridge.removeRequestHandler("frame.resize");

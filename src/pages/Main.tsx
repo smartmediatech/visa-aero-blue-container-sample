@@ -64,6 +64,7 @@ export const Main = () => {
     () => localStorage.getItem("preferredLang") || "en",
   );
   const [showSignIn, setShowSignIn] = useState(false);
+  const signInResolveRef = useRef<((result: { refreshToken: string | null }) => void) | null>(null);
   const [iframeHeight, setIframeHeight] = useState<number | null>(null);
   const [viewerError, setViewerError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
@@ -130,10 +131,32 @@ export const Main = () => {
 
   const handleSignInSuccess = () => {
     setShowSignIn(false);
+    // Resolve any pending bridge sign-in request
+    if (signInResolveRef.current) {
+      signInResolveRef.current({ refreshToken: authService.getRefreshToken() });
+      signInResolveRef.current = null;
+      return;
+    }
     // Navigate iframe to home (authenticated landing)
     navigateIframe("home", region, lang);
     setPage("home");
   };
+
+  const handleSignInClose = () => {
+    setShowSignIn(false);
+    // Resolve with null if the user dismissed the modal
+    if (signInResolveRef.current) {
+      signInResolveRef.current({ refreshToken: null });
+      signInResolveRef.current = null;
+    }
+  };
+
+  const handleSignInRequest = useCallback(async (): Promise<{ refreshToken: string | null }> => {
+    return new Promise((resolve) => {
+      signInResolveRef.current = resolve;
+      setShowSignIn(true);
+    });
+  }, []);
 
   const handlePageNavigation = useCallback(
     (pageId: string) => {
@@ -220,6 +243,7 @@ export const Main = () => {
             onHeightChange={handleHeightChange}
             onLoadError={handleLoadError}
             onSessionClear={handleSessionClear}
+            onSignInRequest={handleSignInRequest}
             style={{ height: iframeHeight ? `${iframeHeight}px` : "100vh" }}
           />
         )}
@@ -231,7 +255,7 @@ export const Main = () => {
       {/* Sign-in modal */}
       <SignInModal
         open={showSignIn}
-        onClose={() => setShowSignIn(false)}
+        onClose={handleSignInClose}
         onSuccess={handleSignInSuccess}
       />
     </div>
