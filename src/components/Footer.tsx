@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import clsx from "clsx";
 import ReactCountryFlag from "react-country-flag";
 import { Select } from "@base-ui/react";
+import clientLogo from "../resources/images/client-logo.svg";
 
 const languages = [
   { code: "en", label: "English", nativeLabel: "English" },
@@ -91,8 +92,9 @@ export function Footer({ className, lang = "en", onLangChange, country = "US", o
       {/* Visa watermark — clipped inside its own container so footer overflow is visible */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
         <svg
-          className="absolute right-0 top-1/2 -translate-y-1/2 h-[120%] w-auto opacity-[0.06] pointer-events-none select-none"
+          className="absolute right-0 bottom-0 opacity-[0.06] pointer-events-none select-none w-full h-auto translate-x-[5%] translate-y-[20%] md:w-auto md:h-[calc(125%-3.125rem)] md:translate-x-0"
           viewBox="0 0 85 24"
+          preserveAspectRatio="xMidYMax meet"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
           aria-hidden="true"
@@ -104,47 +106,57 @@ export function Footer({ className, lang = "en", onLangChange, country = "US", o
         </svg>
       </div>
 
-      <div className="relative z-10 px-8 md:px-16 py-10 flex flex-wrap gap-12 items-start">
-        {/* About us */}
-        <div className="min-w-[140px]">
-          <h3 className="font-semibold text-sm text-[#1a1f36] mb-3">
-            About us
-          </h3>
-          <ul className="space-y-2">
-            {aboutLinks.map((link) => (
-              <li key={link.label}>
-                <a
-                  href={link.href}
-                  className="text-sm text-[#1a1f36]/80 hover:text-[#1a1f36] transition-colors"
-                >
-                  {link.label}
-                </a>
-              </li>
-            ))}
-          </ul>
+      <div className="relative z-10 px-8 md:px-16 py-10 flex flex-col md:flex-row md:items-start gap-8 md:gap-12">
+        {/* Visa logo — mobile only (navbar carries it on desktop) */}
+        <img
+          src={clientLogo}
+          alt="Visa"
+          className="block md:hidden h-6 w-auto self-start"
+        />
+
+        {/* Link columns — always side-by-side */}
+        <div className="flex gap-12">
+          {/* About us */}
+          <div className="min-w-[140px]">
+            <h3 className="font-semibold text-sm text-[#1a1f36] mb-3">
+              About us
+            </h3>
+            <ul className="space-y-2">
+              {aboutLinks.map((link) => (
+                <li key={link.label}>
+                  <a
+                    href={link.href}
+                    className="text-sm text-[#1a1f36]/80 hover:text-[#1a1f36] transition-colors"
+                  >
+                    {link.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Support */}
+          <div className="min-w-[140px]">
+            <h3 className="font-semibold text-sm text-[#1a1f36] mb-3">
+              Support
+            </h3>
+            <ul className="space-y-2">
+              {supportLinks.map((link) => (
+                <li key={link.label}>
+                  <a
+                    href={link.href}
+                    className="text-sm text-[#1a1f36]/80 hover:text-[#1a1f36] transition-colors"
+                  >
+                    {link.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
 
-        {/* Support */}
-        <div className="min-w-[140px]">
-          <h3 className="font-semibold text-sm text-[#1a1f36] mb-3">
-            Support
-          </h3>
-          <ul className="space-y-2">
-            {supportLinks.map((link) => (
-              <li key={link.label}>
-                <a
-                  href={link.href}
-                  className="text-sm text-[#1a1f36]/80 hover:text-[#1a1f36] transition-colors"
-                >
-                  {link.label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Spacer */}
-        <div className="flex-1" />
+        {/* Spacer — desktop only */}
+        <div className="hidden md:block flex-1" />
 
         {/* Country / Language */}
         <div className="flex items-center h-6 gap-3 text-[14px] leading-[22px] tracking-[1px] font-medium text-[#1a1f36]">
