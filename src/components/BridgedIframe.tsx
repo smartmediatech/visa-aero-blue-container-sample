@@ -71,10 +71,7 @@ export const BridgedIframe = forwardRef<
   // Bridge setup — only depends on the iframe element, not on src or callbacks.
   // The bridge origin is derived from src, but only the origin matters (not the hash).
   useEffect(() => {
-    if (!iframe) {
-      console.error("Iframe not available");
-      return;
-    }
+    if (!iframe) return;
 
     if (!window.SMTBaseBridge) {
       console.error("SMTBaseBridge not available on window object");
