@@ -6,7 +6,6 @@ import { BridgedIframe } from "../components/BridgedIframe";
 import type { BridgedIframeHandle } from "../components/BridgedIframe";
 import Navbar from "../components/Navbar";
 import { Footer } from "../components/Footer";
-import { DevOverlay } from "../components/DevOverlay";
 
 const pages = [
   { id: "benefits", label: "Benefits" },
@@ -14,6 +13,14 @@ const pages = [
   { id: "concierge", label: "Concierge" },
   { id: "watchlist", label: "Watchlist" },
 ];
+
+const countryToRegion: Record<string, string> = {
+  US: "us",
+  IT: "italy",
+  CH: "switzerland",
+  GR: "greece",
+  FR: "france",
+};
 
 /*
  * --------------------------------------------------------------------------
@@ -60,6 +67,7 @@ export const Main = () => {
   );
   const [region, setRegion] = useState<string>("germany");
   const [lang, setLang] = useState<string>("en");
+  const [country, setCountry] = useState<string>("US");
   const [showSignIn, setShowSignIn] = useState(false);
   const [iframeHeight, setIframeHeight] = useState<number | null>(null);
   const [viewerError, setViewerError] = useState(false);
@@ -221,16 +229,12 @@ export const Main = () => {
       </main>
 
       {/* Footer */}
-      <Footer lang={lang} onLangChange={handleLangChange} />
-
-      {/* Dev tools */}
-      <DevOverlay
-        region={region}
-        lang={lang}
-        activePage={activePage}
-        onRegionChange={handleRegionChange}
-        onLangChange={handleLangChange}
-      />
+      <Footer lang={lang} onLangChange={handleLangChange} country={country} onCountryChange={(newCountry) => {
+          setCountry(newCountry);
+          const newRegion = countryToRegion[newCountry] ?? "unknown";
+          setRegion(newRegion);
+          navigateIframe(activePage, newRegion, lang);
+        }} />
 
       {/* Sign-in modal */}
       <SignInModal
