@@ -57,8 +57,12 @@ export const Main = () => {
   const [activePage, setPage] = useState<string>(() =>
     authService.isAuthenticated() ? "home" : "landing"
   );
-  const [region, setRegion] = useState<string>("germany");
-  const [lang, setLang] = useState<string>("en");
+  const [region, setRegion] = useState<string>(
+    () => localStorage.getItem("preferredRegion") || "germany",
+  );
+  const [lang, setLang] = useState<string>(
+    () => localStorage.getItem("preferredLang") || "en",
+  );
   const [showSignIn, setShowSignIn] = useState(false);
   const [iframeHeight, setIframeHeight] = useState<number | null>(null);
   const [viewerError, setViewerError] = useState(false);
@@ -148,6 +152,7 @@ export const Main = () => {
   const handleCountryChange = useCallback(
     (slug: string) => {
       setRegion(slug);
+      localStorage.setItem("preferredRegion", slug);
       navigateIframe(activePage, slug, lang);
     },
     [navigateIframe, activePage, lang],
@@ -156,6 +161,7 @@ export const Main = () => {
   const handleLangChange = useCallback(
     (newLang: string) => {
       setLang(newLang);
+      localStorage.setItem("preferredLang", newLang);
       navigateIframe(activePage, region, newLang);
     },
     [navigateIframe, activePage, region],
