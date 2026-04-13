@@ -5,23 +5,24 @@ import { Select } from "@base-ui/react";
 import clientLogo from "../resources/images/client-logo.svg";
 
 const languages = [
+  { code: "ar", label: "Arabic", nativeLabel: "العربية" },
+  { code: "nl", label: "Dutch", nativeLabel: "Nederlands" },
   { code: "en", label: "English", nativeLabel: "English" },
-  { code: "es", label: "Spanish", nativeLabel: "Espanol" },
-  { code: "fr-ca", label: "French Canadian", nativeLabel: "Français Canadien" },
-  { code: "fr", label: "French European", nativeLabel: "French Européen" },
+  { code: "fr", label: "French", nativeLabel: "Français" },
   { code: "de", label: "German", nativeLabel: "Deutsch" },
+  { code: "id", label: "Indonesian", nativeLabel: "Bahasa Indonesia" },
   { code: "it", label: "Italian", nativeLabel: "Italiano" },
-  { code: "pt-br", label: "Portuguese (Brazil)", nativeLabel: "Português (Brasil)" },
-  { code: "ru", label: "Russian", nativeLabel: "русский" },
-  { code: "uk", label: "Ukranian", nativeLabel: "українська" },
+  { code: "ja", label: "Japanese", nativeLabel: "日本語" },
+  { code: "ko", label: "Korean", nativeLabel: "한국어" },
+  { code: "pt", label: "Portuguese", nativeLabel: "Português" },
+  { code: "es", label: "Spanish", nativeLabel: "Español" },
 ];
 
 const countries = [
-  { code: "US", label: "United States" },
-  { code: "IT", label: "Italy" },
-  { code: "CH", label: "Switzerland" },
-  { code: "GR", label: "Greece" },
-  { code: "FR", label: "France" },
+  { code: "FR", label: "France", slug: "france" },
+  { code: "DE", label: "Germany", slug: "germany" },
+  { code: "GR", label: "Greece", slug: "greece" },
+  { code: "IT", label: "Italy", slug: "italy" },
 ];
 
 const aboutLinks = [
@@ -62,13 +63,14 @@ export interface FooterProps {
   lang?: string;
   onLangChange?: (lang: string) => void;
   country?: string;
-  onCountryChange?: (country: string) => void;
+  onCountryChange?: (slug: string) => void;
 }
 
-export function Footer({ className, lang = "en", onLangChange, country = "US", onCountryChange }: FooterProps) {
+export function Footer({ className, lang = "en", onLangChange, country = "france", onCountryChange }: FooterProps) {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const selectedLang = languages.find((l) => l.code === lang) ?? languages[0];
+  const selectedCountry = countries.find((c) => c.slug === country) ?? countries[0];
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -166,8 +168,8 @@ export function Footer({ className, lang = "en", onLangChange, country = "US", o
             onValueChange={(val) => { if (val) onCountryChange?.(val); }}
           >
             <Select.Trigger className="flex items-center gap-2.5 cursor-pointer focus:outline-none hover:opacity-80 transition-opacity">
-              <CircleFlag code={country} size={24} />
-              <span>{countries.find((c) => c.code === country)?.label ?? country}</span>
+              <CircleFlag code={selectedCountry.code} size={24} />
+              <span>{selectedCountry.label}</span>
             </Select.Trigger>
 
             <Select.Portal>
@@ -175,8 +177,8 @@ export function Footer({ className, lang = "en", onLangChange, country = "US", o
                 <Select.Popup className="bg-white rounded-xl py-1 min-w-[220px] focus:outline-none [box-shadow:4px_4px_16px_0px_rgba(0,0,0,0.10)]">
                   {countries.map((c) => (
                     <Select.Item
-                      key={c.code}
-                      value={c.code}
+                      key={c.slug}
+                      value={c.slug}
                       className="flex items-center gap-3 px-4 py-3 cursor-pointer text-sm text-[#1a1f36] data-[highlighted]:bg-[#f7f7f8] data-[selected]:bg-[#f0f1f4] focus:outline-none"
                     >
                       <CircleFlag code={c.code} size={28} />

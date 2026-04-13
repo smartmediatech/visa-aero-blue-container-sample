@@ -15,7 +15,7 @@ import { AccountMenu, type AccountItemId } from "./AccountMenu";
 import type { User } from "../types/auth.types";
 
 export interface NavbarProps {
-  pages: { id: string; label: string }[];
+  pages: { id: string; label: string; disabled?: boolean }[];
   /** Optional additional CSS classes */
   className?: string;
   onPageClick: (page: string) => void;
@@ -109,7 +109,8 @@ const Navbar = forwardRef<HTMLElement, NavbarProps>(
                     <Tabs.Tab
                       key={page.id}
                       value={page.id}
-                      className={tabClassName}
+                      disabled={page.disabled}
+                      className={clsx(tabClassName, page.disabled && "opacity-35 cursor-not-allowed pointer-events-none")}
                     >
                       {page.label}
                       <span
@@ -180,9 +181,9 @@ const Navbar = forwardRef<HTMLElement, NavbarProps>(
                             return (
                               <Drawer.Close
                                 key={page.id}
-                                render={<button type="button" />}
-                                className={drawerItemClassName}
-                                onClick={() => onPageClick(page.id)}
+                                render={<button type="button" disabled={page.disabled} />}
+                                className={clsx(drawerItemClassName, page.disabled && "opacity-35 cursor-not-allowed pointer-events-none")}
+                                onClick={page.disabled ? undefined : () => onPageClick(page.id)}
                               >
                                 {Icon ? <Icon /> : <span className="w-[22px]" />}
                                 <span className="flex-1">{page.label}</span>

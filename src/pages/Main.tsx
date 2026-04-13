@@ -9,18 +9,10 @@ import { Footer } from "../components/Footer";
 
 const pages = [
   { id: "benefits", label: "Benefits" },
-  { id: "travel", label: "Travel" },
-  { id: "concierge", label: "Concierge" },
-  { id: "watchlist", label: "Watchlist" },
+  { id: "travel", label: "Travel", disabled: true },
+  { id: "concierge", label: "Concierge", disabled: true },
+  { id: "watchlist", label: "Watchlist", disabled: true },
 ];
-
-const countryToRegion: Record<string, string> = {
-  US: "us",
-  IT: "italy",
-  CH: "switzerland",
-  GR: "greece",
-  FR: "france",
-};
 
 /*
  * --------------------------------------------------------------------------
@@ -67,7 +59,6 @@ export const Main = () => {
   );
   const [region, setRegion] = useState<string>("germany");
   const [lang, setLang] = useState<string>("en");
-  const [country, setCountry] = useState<string>("US");
   const [showSignIn, setShowSignIn] = useState(false);
   const [iframeHeight, setIframeHeight] = useState<number | null>(null);
   const [viewerError, setViewerError] = useState(false);
@@ -154,10 +145,10 @@ export const Main = () => {
     [navigateIframe, region, lang],
   );
 
-  const handleRegionChange = useCallback(
-    (newRegion: string) => {
-      setRegion(newRegion);
-      navigateIframe(activePage, newRegion, lang);
+  const handleCountryChange = useCallback(
+    (slug: string) => {
+      setRegion(slug);
+      navigateIframe(activePage, slug, lang);
     },
     [navigateIframe, activePage, lang],
   );
@@ -229,12 +220,7 @@ export const Main = () => {
       </main>
 
       {/* Footer */}
-      <Footer lang={lang} onLangChange={handleLangChange} country={country} onCountryChange={(newCountry) => {
-          setCountry(newCountry);
-          const newRegion = countryToRegion[newCountry] ?? "unknown";
-          setRegion(newRegion);
-          navigateIframe(activePage, newRegion, lang);
-        }} />
+      <Footer lang={lang} onLangChange={handleLangChange} country={region} onCountryChange={handleCountryChange} />
 
       {/* Sign-in modal */}
       <SignInModal
