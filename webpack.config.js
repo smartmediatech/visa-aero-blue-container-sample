@@ -14,6 +14,9 @@ module.exports = {
   devtool: "source-map",
   resolve: {
     extensions: [".tsx", ".ts", ".js", ".jsx"],
+    alias: {
+      "@": path.resolve(__dirname, "src"),
+    },
   },
   module: {
     rules: [
@@ -66,7 +69,7 @@ module.exports = {
       directory: path.join(__dirname, "public"),
     },
     historyApiFallback: true,
-    port: 3000,
+    port: 3100,
     hot: true,
     open: true,
     server: {
