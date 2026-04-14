@@ -8,8 +8,7 @@ import type {
 
 export const API_BASE_URL = "https://b.smartmedialabs.io";
 export const APP_ID = "29512c85-0f45-44ff-a2d5-8269f2476116";
-export const EMBEDDED_VIEWER_URL =
-  "https://embedded.smartmedialabs.io/visa-aero-blue/";
+export const EMBEDDED_VIEWER_URL = "https://embedded.smartmedialabs.io/visa-aero-blue-smart/v1/";
 
 // Authentication service
 class AuthService {
