@@ -14,42 +14,6 @@ const pages = [
   { id: "watchlist", label: "Watchlist", disabled: true },
 ];
 
-/*
- * --------------------------------------------------------------------------
- * TODO: Proper bridge-based navigation (Option B)
- * --------------------------------------------------------------------------
- * Currently navigation works by setting the iframe src directly (Option A).
- * This causes a full iframe reload on each tab click.
- *
- * The intended architecture is for navigation to go through the bridge:
- *
- * 1. The viewer app (visa-aero-blue-viewer) needs to:
- *    a. Load smt-base-bridge.min.js in its index.html
- *    b. Initialize a ChildBridge in its entry point:
- *         const bridge = new window.SMTBaseBridge.ChildBridge({
- *           origin: '<container-origin>',
- *           meta: {},
- *         });
- *    c. Register a navigation.go handler that maps feature names to routes:
- *         bridge.addRequestHandler('navigation.go', async ({ payload }) => {
- *           const { feature } = payload;
- *           // Use react-router's navigate() to switch routes internally
- *           // e.g. feature "benefits" → navigate("/global/benefits")
- *           return { feature };
- *         });
- *
- * 2. The container (this file) would then use the bridge instead of src:
- *         await iframeRef.current?.goTo({ feature: "benefits" });
- *    This avoids iframe reloads and enables smooth in-app transitions.
- *
- * 3. The viewer should also register a session.get handler so it can
- *    request the refresh token from the container on startup.
- *
- * See embedded-viewer-example for a working reference of this pattern,
- * specifically its BridgedIframe.tsx and Discover.tsx components.
- * --------------------------------------------------------------------------
- */
-
 export const Main = () => {
   const [loading, setLoading] = useState(false);
   const { user, logout, isAuthenticated } = useAuth();
@@ -89,7 +53,6 @@ export const Main = () => {
   const buildIframeUrl = useCallback(
     (page: string, reg: string, lng: string) => {
       const url = `${baseUrl}#/${reg}/${page}?lang=${lng}`;
-      console.log("[container] buildUrl:", url);
       return url;
     },
     [baseUrl],
@@ -109,6 +72,14 @@ export const Main = () => {
   );
 
   const handleSessionClear = useCallback(async () => {
+    // The SDK fires session.clear both for intentional logouts AND as error
+    // recovery when it gets a 401 during token exchange (e.g. auto-fetch on
+    // an unauthenticated page).  Only treat it as a real logout when we
+    // actually have tokens to clear — otherwise it's a no-op "I have no
+    // session" signal that shouldn't disrupt the UI.
+    if (!authService.isAuthenticated()) {
+      return;
+    }
     await logout();
     navigateIframe("landing", region, lang);
     setPage("landing");
@@ -119,9 +90,14 @@ export const Main = () => {
     setLoading(true);
     try {
       await logout();
-      // Navigate iframe to landing page
+      // Navigate iframe to landing page and force a full remount so the
+      // viewer's in-memory session state is discarded.  A hash-only src
+      // change doesn't reload the iframe, so the SDK would still have
+      // the old user — causing LandingPage's auth guard to redirect
+      // straight back to home.
       navigateIframe("landing", region, lang);
       setPage("landing");
+      setRetryKey((k) => k + 1);
     } catch (error) {
       console.error("Logout failed:", error);
     } finally {
@@ -133,7 +109,8 @@ export const Main = () => {
     setShowSignIn(false);
     // Resolve any pending bridge sign-in request
     if (signInResolveRef.current) {
-      signInResolveRef.current({ refreshToken: authService.getRefreshToken() });
+      const token = authService.getRefreshToken();
+      signInResolveRef.current({ refreshToken: token });
       signInResolveRef.current = null;
       return;
     }
@@ -159,15 +136,26 @@ export const Main = () => {
   }, []);
 
   const handlePageNavigation = useCallback(
-    (pageId: string) => {
+    async (pageId: string) => {
       // Only navigate pages that exist in the viewer
       const viewerPages = ["benefits", "travel", "concierge", "watchlist", "home", "landing"];
       if (!viewerPages.includes(pageId)) {
         console.warn(`[container] No viewer route for "${pageId}"`);
         return;
       }
-      navigateIframe(pageId, region, lang);
-      setPage(pageId);
+      // Use bridge navigation (no iframe reload) when the bridge is connected.
+      // Falls back to src-based navigation if the bridge isn't ready.
+      try {
+        await iframeRef.current?.goTo({
+          feature: pageId,
+          params: { region, lang },
+        });
+        setPage(pageId);
+      } catch {
+        console.warn("[container] Bridge nav failed, falling back to src reload");
+        navigateIframe(pageId, region, lang);
+        setPage(pageId);
+      }
     },
     [navigateIframe, region, lang],
   );
@@ -205,8 +193,6 @@ export const Main = () => {
         onAccountItemClick={(itemId) => {
           if (itemId === "sign-out") {
             handleLogout();
-          } else {
-            console.log(`[container] Account action: ${itemId}`);
           }
         }}
         onLogoutClick={() => {

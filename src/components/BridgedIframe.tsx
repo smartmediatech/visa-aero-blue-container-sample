@@ -78,19 +78,10 @@ export const BridgedIframe = forwardRef<
 
     if (!window.SMTBaseBridge) {
       console.error("SMTBaseBridge not available on window object");
-      console.log(
-        "Available window properties:",
-        Object.keys(window).filter(
-          (k) =>
-            k.toLowerCase().includes("bridge") ||
-            k.toLowerCase().includes("smt"),
-        ),
-      );
       return;
     }
 
     const childOrigin = new URL(src);
-    console.log("parent", childOrigin.origin);
     // Create bridge using ParentBridge constructor
     const bridge = new window.SMTBaseBridge.ParentBridge(iframe, {
       origin: childOrigin.origin,
@@ -114,16 +105,11 @@ export const BridgedIframe = forwardRef<
       hasConnectedRef.current = true;
       setIsLoading(false);
       const refreshToken = authService.getRefreshToken();
-      console.log(
-        "session.get called, returning refreshToken:",
-        refreshToken ? "present" : "null",
-      );
       return { refreshToken };
     });
 
     // Register session.clear handler
     bridge.addRequestHandler("session.clear", async () => {
-      console.log("session.clear called");
       await onSessionClearRef.current?.();
       return {};
     });
@@ -131,7 +117,6 @@ export const BridgedIframe = forwardRef<
     // Register session.signIn handler — viewer requests the container to
     // show the sign-in modal and returns the refresh token on success.
     bridge.addRequestHandler("session.signIn", async () => {
-      console.log("session.signIn called");
       if (onSignInRequestRef.current) {
         return await onSignInRequestRef.current();
       }
@@ -171,9 +156,6 @@ export const BridgedIframe = forwardRef<
       }
       return {};
     });
-
-    console.log("Bridge handlers registered successfully");
-
     // Cleanup
     return () => {
       if (loadTimeout !== null) {
