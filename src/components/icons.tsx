@@ -1,98 +1,80 @@
 // Shared icon components for the navigation UI.
 
 import React from "react";
-import {
-  UserCircle,
-  User,
-  ThumbsUp,
-  BellRinging,
-  Bell,
-  Key,
-  SignOut,
-  House,
-  Gift,
-  MapTrifold,
-  BellSimple,
-  Medal,
-  MagnifyingGlass,
-  List,
-  X,
-  Check,
-  CaretRight,
-} from "@phosphor-icons/react";
+import * as PhosphorIcons from "@phosphor-icons/react";
 
 // --- Account icons ---
 
 export function ProfileIcon() {
-  return <UserCircle size={24} />;
+  return <PhosphorIcons.UserCircleIcon size={24} aria-hidden="true" />;
 }
 
 export function AccountSlimIcon() {
-  return <User size={22} weight="light" />;
+  return <PhosphorIcons.UserIcon size={22} weight="light" aria-hidden="true" />;
 }
 
 export function PreferencesIcon() {
-  return <ThumbsUp size={22} />;
+  return <PhosphorIcons.ThumbsUpIcon size={22} aria-hidden="true" />;
 }
 
 export function NotificationsIcon() {
-  return <BellRinging size={22} />;
+  return <PhosphorIcons.BellRingingIcon size={22} aria-hidden="true" />;
 }
 
 export function ManageNotificationsIcon() {
-  return <Bell size={22} />;
+  return <PhosphorIcons.BellIcon size={22} aria-hidden="true" />;
 }
 
 export function SecurityIcon() {
-  return <Key size={22} />;
+  return <PhosphorIcons.KeyIcon size={22} aria-hidden="true" />;
 }
 
 export function SignOutIcon() {
-  return <SignOut size={22} />;
+  return <PhosphorIcons.SignOutIcon size={22} aria-hidden="true" />;
 }
 
 // --- Nav chrome icons ---
 
 export function HamburgerIcon() {
-  return <List size={24} />;
+  return <PhosphorIcons.ListIcon size={24} aria-hidden="true" />;
 }
 
 export function CloseIcon() {
-  return <X size={24} />;
+  return <PhosphorIcons.XIcon size={24} aria-hidden="true" />;
 }
 
 export function CheckIcon() {
-  return <Check size={20} color="#04204a" />;
+  return <PhosphorIcons.CheckIcon size={20} color="#04204a" aria-hidden="true" />;
 }
 
 export function ChevronRightIcon() {
-  return <CaretRight size={20} />;
+  return <PhosphorIcons.CaretRightIcon size={20} aria-hidden="true" />;
 }
 
 // --- Mobile menu page icons ---
 
 export function HomeIcon() {
-  return <House size={22} weight="light" />;
+  return <PhosphorIcons.HouseIcon size={22} weight="light" aria-hidden="true" />;
 }
 
 export function BenefitsIcon() {
-  return <Gift size={22} weight="light" />;
+  return <PhosphorIcons.GiftIcon size={22} weight="light" aria-hidden="true" />;
 }
 
 export function TravelIcon() {
-  return <MapTrifold size={22} />;
+  return <PhosphorIcons.MapTrifoldIcon size={22} aria-hidden="true" />;
 }
 
 export function ConciergeIcon() {
-  return <BellSimple size={22} />;
+  return <PhosphorIcons.BellSimpleIcon size={22} aria-hidden="true" />;
 }
 
 export function WatchlistIcon() {
-  return <Medal size={22} weight="light" />;
+  return <PhosphorIcons.MedalIcon size={22} weight="light" aria-hidden="true" />;
 }
 
 export function SearchIcon() {
-  return <MagnifyingGlass size={22} />;
+  return <PhosphorIcons.MagnifyingGlassIcon size={22} aria-hidden="true" />;
 }
 
 export const pageIcons: Record<string, () => React.JSX.Element> = {
