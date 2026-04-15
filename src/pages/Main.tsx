@@ -424,6 +424,12 @@ export const Main = () => {
 
   return (
     <div className="flex min-h-screen flex-col bg-white">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[10002] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-[#1a1f36] focus:shadow-lg"
+      >
+        Skip to main content
+      </a>
       <div ref={headerRef}>
         <Navbar
           pages={pages}
@@ -453,7 +459,7 @@ export const Main = () => {
         />
       </div>
 
-      <main className="flex-none">
+      <main id="main-content" tabIndex={-1} className="flex-none">
         <div className="relative bg-white" style={shellStyle}>
           <BridgedIframe
             key={retryKey}
@@ -517,11 +523,12 @@ export const Main = () => {
         </div>
       )}
 
-      <SignInModal
-        open={showSignIn}
-        onClose={handleSignInClose}
-        onSuccess={handleSignInSuccess}
-      />
+      {showSignIn && (
+        <SignInModal
+          onClose={handleSignInClose}
+          onSuccess={handleSignInSuccess}
+        />
+      )}
     </div>
   );
 };

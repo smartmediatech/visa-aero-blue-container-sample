@@ -55,8 +55,9 @@ const Navbar = forwardRef<HTMLElement, NavbarProps>(
 
     const drawerItemClassName = clsx(
       "flex items-center gap-3 w-full px-4 py-3 rounded-lg text-left",
-      "border-0 bg-transparent outline-none cursor-pointer",
+      "border-0 bg-transparent cursor-pointer touch-manipulation",
       "text-text-primary hover:bg-gray-50",
+      "focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
       "transition-colors duration-150",
     );
 
@@ -74,17 +75,32 @@ const Navbar = forwardRef<HTMLElement, NavbarProps>(
         >
           {/* Logo */}
           <div className={clsx("navbar__logo-container", "flex items-center")}>
-            <img
-              alt="Logo"
-              src={clientLogo}
-              className={clsx(
-                "navbar__logo",
-                "max-w-[230px] min-w-[100px] h-6",
-                isAuthenticated && onLogoClick && "cursor-pointer",
-              )}
-              onClick={isAuthenticated && onLogoClick ? onLogoClick : undefined}
-              role={isAuthenticated && onLogoClick ? "button" : undefined}
-            />
+            {isAuthenticated && onLogoClick ? (
+              <button
+                type="button"
+                className="rounded-md touch-manipulation focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                onClick={onLogoClick}
+                aria-label="Go to home"
+              >
+                <img
+                  alt=""
+                  src={clientLogo}
+                  className={clsx(
+                    "navbar__logo",
+                    "max-w-[230px] min-w-[100px] h-6 cursor-pointer",
+                  )}
+                />
+              </button>
+            ) : (
+              <img
+                alt="Visa Aero Blue"
+                src={clientLogo}
+                className={clsx(
+                  "navbar__logo",
+                  "max-w-[230px] min-w-[100px] h-6",
+                )}
+              />
+            )}
           </div>
 
           {/* Desktop Navigation - Hidden on mobile, only shown when authenticated */}
@@ -136,9 +152,9 @@ const Navbar = forwardRef<HTMLElement, NavbarProps>(
 
             {/* Mobile hamburger nav drawer */}
             {isAuthenticated && (
-              <Drawer.Root swipeDirection="left">
+              <Drawer.Root swipeDirection="right">
                 <Drawer.Trigger
-                  className="md:hidden p-2 border-0 bg-transparent outline-none cursor-pointer text-text-primary"
+                  className="md:hidden rounded-md p-2 border-0 bg-transparent cursor-pointer text-text-primary touch-manipulation focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
                   aria-label="Open menu"
                 >
                   <HamburgerIcon />
@@ -155,7 +171,7 @@ const Navbar = forwardRef<HTMLElement, NavbarProps>(
                             Menu
                           </Drawer.Title>
                           <Drawer.Close
-                            className="p-2 border-0 bg-transparent outline-none cursor-pointer text-text-primary"
+                            className="rounded-md p-2 border-0 bg-transparent cursor-pointer text-text-primary touch-manipulation focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
                             aria-label="Close menu"
                           >
                             <CloseIcon />
@@ -212,21 +228,23 @@ const Navbar = forwardRef<HTMLElement, NavbarProps>(
 
             {/* Sign in (unauthenticated only) */}
             {!isAuthenticated && (
-              <button
-                type="button"
-                className={clsx(
-                  "navbar__sign-in-button",
-                  "px-4 py-2 font-medium text-sm cursor-pointer",
-                  "text-text-primary/80 hover:text-text-primary",
-                  "transition-colors duration-200",
-                )}
-                onClick={() => {
-                  onSignInClick();
-                }}
-              >
-                Sign in
-              </button>
-            )}
+                <button
+                  type="button"
+                  className={clsx(
+                    "navbar__sign-in-button",
+                    "px-4 py-2 font-medium text-sm cursor-pointer",
+                    "rounded-md touch-manipulation",
+                    "text-text-primary/80 hover:text-text-primary",
+                    "focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2",
+                    "transition-colors duration-200",
+                  )}
+                  onClick={() => {
+                    onSignInClick();
+                  }}
+                >
+                  Sign In
+                </button>
+              )}
           </div>
         </div>
       </header>
