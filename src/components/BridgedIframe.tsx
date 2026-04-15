@@ -13,8 +13,20 @@ interface BridgedIframeProps {
   src: string;
   className?: string;
   style?: React.CSSProperties;
-  onHeightChange?: (height: number) => void;
   onLoadError?: () => void;
+  onRouteLoading?: (payload: { routeKey?: string }) => void;
+  onRouteError?: (payload: {
+    routeKey?: string;
+    code?: string;
+    message?: string;
+    retryable?: boolean;
+    legacy?: boolean;
+  }) => void;
+  onLayoutStable?: (payload: {
+    routeKey?: string;
+    height: number;
+    stable?: boolean;
+  }) => void;
   onSessionClear?: () => void | Promise<void>;
   onSignInRequest?: () => Promise<{ refreshToken: string | null }>;
   onNavigation?: (
@@ -38,6 +50,7 @@ export interface BridgedIframeHandle {
     feature: string;
     focus?: string;
     extra?: string;
+    routeKey?: string;
     params?: Record<string, any>;
   }) => Promise<unknown>;
 }
@@ -45,25 +58,35 @@ export interface BridgedIframeHandle {
 export const BridgedIframe = forwardRef<
   BridgedIframeHandle,
   BridgedIframeProps
->(({ src, className, style, onHeightChange, onLoadError, onSessionClear, onSignInRequest, onNavigation }, ref) => {
+>(({
+  src,
+  className,
+  style,
+  onLoadError,
+  onRouteLoading,
+  onRouteError,
+  onLayoutStable,
+  onSessionClear,
+  onSignInRequest,
+  onNavigation,
+}, ref) => {
   const [iframe, setIframe] = useState<HTMLIFrameElement | null>(null);
   const bridgeRef = useRef<ParentBridge | null>(null);
   const [iframeSrc, setIframeSrc] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const hasConnectedRef = useRef(false);
 
-  const setIframeRef = useCallback(
-    (element: HTMLIFrameElement | null) => {
-      setIframe(element);
-    },
-    [setIframe],
-  );
+  const setIframeRef = useCallback((element: HTMLIFrameElement | null) => {
+    setIframe(element);
+  }, []);
 
-  // Store callbacks in refs so the bridge effect doesn't re-run when they change
-  const onHeightChangeRef = useRef(onHeightChange);
-  onHeightChangeRef.current = onHeightChange;
   const onLoadErrorRef = useRef(onLoadError);
   onLoadErrorRef.current = onLoadError;
+  const onRouteLoadingRef = useRef(onRouteLoading);
+  onRouteLoadingRef.current = onRouteLoading;
+  const onRouteErrorRef = useRef(onRouteError);
+  onRouteErrorRef.current = onRouteError;
+  const onLayoutStableRef = useRef(onLayoutStable);
+  onLayoutStableRef.current = onLayoutStable;
   const onSessionClearRef = useRef(onSessionClear);
   onSessionClearRef.current = onSessionClear;
   const onSignInRequestRef = useRef(onSignInRequest);
@@ -71,8 +94,6 @@ export const BridgedIframe = forwardRef<
   const onNavigationRef = useRef(onNavigation);
   onNavigationRef.current = onNavigation;
 
-  // Bridge setup — only depends on the iframe element, not on src or callbacks.
-  // The bridge origin is derived from src, but only the origin matters (not the hash).
   useEffect(() => {
     if (!iframe) return;
 
@@ -82,40 +103,33 @@ export const BridgedIframe = forwardRef<
     }
 
     const childOrigin = new URL(src);
-    // Create bridge using ParentBridge constructor
     const bridge = new window.SMTBaseBridge.ParentBridge(iframe, {
       origin: childOrigin.origin,
       meta: {},
     });
     bridgeRef.current = bridge;
 
-    // Start a timeout — if session.get isn't received within 10s the viewer
-    // didn't load (cert rejected, network error, not running, etc.)
     let loadTimeout: ReturnType<typeof setTimeout> | null = setTimeout(() => {
       setIsLoading(false);
+      onRouteErrorRef.current?.({ legacy: true });
       onLoadErrorRef.current?.();
     }, 10000);
 
-    // Register session.get handler
     bridge.addRequestHandler("session.get", async () => {
       if (loadTimeout !== null) {
         clearTimeout(loadTimeout);
         loadTimeout = null;
       }
-      hasConnectedRef.current = true;
       setIsLoading(false);
       const refreshToken = authService.getRefreshToken();
       return { refreshToken };
     });
 
-    // Register session.clear handler
     bridge.addRequestHandler("session.clear", async () => {
       await onSessionClearRef.current?.();
       return {};
     });
 
-    // Register session.signIn handler — viewer requests the container to
-    // show the sign-in modal and returns the refresh token on success.
     bridge.addRequestHandler("session.signIn", async () => {
       if (onSignInRequestRef.current) {
         return await onSignInRequestRef.current();
@@ -133,7 +147,6 @@ export const BridgedIframe = forwardRef<
       if (onNavigationRef.current) {
         return (await onNavigationRef.current(feature, focus, extra, params)) ?? {};
       }
-      //supported route
       return { feature, focus, extra, params };
     });
 
@@ -143,56 +156,76 @@ export const BridgedIframe = forwardRef<
       return {};
     });
 
-    // Register frame.resize handler — the viewer sends its content height
-    // so the container can size the iframe and allow the footer to flow below.
-    // IMPORTANT: Do NOT set iframe.style.height directly here — that creates a
-    // feedback loop (viewer measures viewport → reports height → iframe grows →
-    // viewer sees more space → reports larger height → …). Instead, delegate
-    // to the parent via onHeightChange so it can set height through React state.
+    bridge.addRequestHandler("viewer.route.loading", async ({ payload }) => {
+      const { routeKey } = (payload ?? {}) as { routeKey?: string };
+      onRouteLoadingRef.current?.({ routeKey });
+      return {};
+    });
+
+    bridge.addRequestHandler("viewer.route.error", async ({ payload }) => {
+      const { routeKey, code, message, retryable } = (payload ?? {}) as {
+        routeKey?: string;
+        code?: string;
+        message?: string;
+        retryable?: boolean;
+      };
+      onRouteErrorRef.current?.({ routeKey, code, message, retryable });
+      return {};
+    });
+
     bridge.addRequestHandler("frame.resize", async ({ payload }) => {
-      const { height } = payload as { height: number };
+      const {
+        height,
+        routeKey,
+        stable,
+      } = payload as {
+        height: number;
+        routeKey?: string;
+        stable?: boolean;
+      };
+
       if (typeof height === "number" && height > 0) {
-        onHeightChangeRef.current?.(height);
+        onLayoutStableRef.current?.({
+          routeKey,
+          height,
+          stable,
+        });
       }
       return {};
     });
-    // Cleanup
+
     return () => {
       if (loadTimeout !== null) {
         clearTimeout(loadTimeout);
         loadTimeout = null;
       }
-      hasConnectedRef.current = false;
-      if (bridge) {
-        bridge.removeRequestHandler("session.get");
-        bridge.removeRequestHandler("session.clear");
-        bridge.removeRequestHandler("session.signIn");
-        bridge.removeRequestHandler("navigation.go");
-        bridge.removeRequestHandler("navigation.open");
-        bridge.removeRequestHandler("frame.resize");
-        bridge.dispose();
-        if (bridgeRef.current === bridge) {
-          bridgeRef.current = null;
-        }
+      bridge.removeRequestHandler("session.get");
+      bridge.removeRequestHandler("session.clear");
+      bridge.removeRequestHandler("session.signIn");
+      bridge.removeRequestHandler("navigation.go");
+      bridge.removeRequestHandler("navigation.open");
+      bridge.removeRequestHandler("viewer.route.loading");
+      bridge.removeRequestHandler("viewer.route.error");
+      bridge.removeRequestHandler("frame.resize");
+      bridge.dispose();
+      if (bridgeRef.current === bridge) {
+        bridgeRef.current = null;
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- bridge depends on iframe element and origin only
   }, [iframe]);
 
-  // Src updates — set the iframe src whenever the prop changes.
-  // This is separate from bridge setup so hash-only navigation doesn't
-  // tear down the bridge or restart the load timeout.
   useEffect(() => {
     if (!iframe) return;
     setIframeSrc(src);
   }, [src, iframe]);
 
-  // Expose goTo function via ref
   useImperativeHandle(ref, () => ({
     goTo: async (params: {
       feature: string;
       focus?: string;
       extra?: string;
+      routeKey?: string;
       params?: Record<string, any>;
     }) => {
       if (!bridgeRef.current) {
@@ -204,18 +237,19 @@ export const BridgedIframe = forwardRef<
 
   return (
     <div className={className} style={style}>
-      <div className="relative w-full h-full">
+      <div className="relative h-full w-full">
         <iframe
           ref={setIframeRef}
           src={iframeSrc || undefined}
-          className="w-full h-full border-0"
+          className="h-full w-full border-0"
+          aria-busy={isLoading}
           style={{ visibility: isLoading ? "hidden" : "visible" }}
           title="Embedded Content"
           allow="geolocation; camera; microphone; fullscreen; autoplay; clipboard-write; encrypted-media; gyroscope; accelerometer; web-share"
         />
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-8 h-8 rounded-full border-2 border-gray-200 border-t-blue-500 animate-spin" />
+            <div className="h-8 w-8 rounded-full border-2 border-gray-200 border-t-blue-500 animate-spin" />
           </div>
         )}
       </div>

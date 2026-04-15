@@ -64,9 +64,17 @@ export interface FooterProps {
   onLangChange?: (lang: string) => void;
   country?: string;
   onCountryChange?: (slug: string) => void;
+  disabled?: boolean;
 }
 
-export function Footer({ className, lang = "en", onLangChange, country = "france", onCountryChange }: FooterProps) {
+export function Footer({
+  className,
+  lang = "en",
+  onLangChange,
+  country = "france",
+  onCountryChange,
+  disabled = false,
+}: FooterProps) {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const selectedLang = languages.find((l) => l.code === lang) ?? languages[0];
@@ -83,6 +91,12 @@ export function Footer({ className, lang = "en", onLangChange, country = "france
       return () => document.removeEventListener("mousedown", handleClickOutside);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (disabled) {
+      setOpen(false);
+    }
+  }, [disabled]);
 
   return (
     <footer
@@ -166,8 +180,12 @@ export function Footer({ className, lang = "en", onLangChange, country = "france
           <Select.Root
             value={country}
             onValueChange={(val) => { if (val) onCountryChange?.(val); }}
+            disabled={disabled}
           >
-            <Select.Trigger className="flex items-center gap-2.5 cursor-pointer focus:outline-none hover:opacity-80 transition-opacity">
+            <Select.Trigger className={clsx(
+              "flex items-center gap-2.5 focus:outline-none transition-opacity",
+              disabled ? "cursor-progress opacity-60" : "cursor-pointer hover:opacity-80",
+            )}>
               <CircleFlag code={selectedCountry.code} size={24} />
               <span>{selectedCountry.label}</span>
             </Select.Trigger>
@@ -202,10 +220,14 @@ export function Footer({ className, lang = "en", onLangChange, country = "france
           <div ref={dropdownRef} className="relative flex items-center">
             <button
               type="button"
-              className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity"
+              className={clsx(
+                "flex items-center gap-1.5 transition-opacity",
+                disabled ? "cursor-progress opacity-60" : "cursor-pointer hover:opacity-80",
+              )}
               onClick={() => setOpen((prev) => !prev)}
               aria-expanded={open}
               aria-haspopup="listbox"
+              disabled={disabled}
             >
               {selectedLang.nativeLabel}
               {/* Solid filled triangle ▼ */}
