@@ -1,335 +1,146 @@
-# VISA Aero Blue - Container App Example
+# VISA Aero Blue Container App Example
 
-This project demonstrates a **container application** that embeds and communicates with the **VISA Aero Blue Embedded Viewer** using the `smt-base-bridge` library. The container app handles authentication, passes auth tokens to the embedded viewer, manages navigation between features/pages, and handles logout functionality.
+This repo is a sample container application. Its purpose is to show third-party implementers how a host container can authenticate users, embed the Aero Blue viewer in an iframe, and communicate with that viewer through a narrow bridge contract.
 
-## Overview
+Treat this repo as an engineering reference for container-side patterns and architecture. The embedded viewer should be treated as an external application behind an iframe boundary.
 
-This example showcases:
-- **User Authentication**: Login flow with email/password
-- **Auth Token Passing**: Securely passing refresh tokens to the embedded viewer
-- **Feature Navigation**: Changing pages/features within the embedded viewer (e.g., Discover, Saved/Inventory)
-- **Logout Handling**: Coordinated logout between container and embedded viewer
-- **Bridge Communication**: Two-way communication using the `smt-base-bridge` library
+## Architecture
+
+The container and embedded viewer are separate applications with separate routing, state, and rendering lifecycles.
+
+- The container owns shell UI such as auth, chrome, layout, and any host-level URL handling.
+- The viewer owns its internal screens and route transitions inside the iframe.
+- The bridge is the only integration contract between the two sides.
+
+The container should not depend on viewer internals. It should only depend on:
+
+- the iframe URL
+- the agreed bridge message names and payload shapes
+- the auth/session contract
+- the navigation contract
+
+This sample demonstrates those responsibilities with container-side code such as:
+
+- `src/components/BridgedIframe.tsx`
+- `src/pages/Main.tsx`
+- `src/services/authService.ts`
+- `src/navigation/viewerIntent.ts`
 
 ## Prerequisites
 
-The **`smt-base-bridge.min.js`** library from the `public/` directory must be loaded in your HTML to enable communication between the container app and the embedded viewer.
+The container requires the bundled `smt-base-bridge` script to be present in `public/index.html` so `window.SMTBaseBridge.ParentBridge` is available at runtime.
 
 ```html
-<!-- public/index.html -->
 <script src="./smt-base-bridge.min.js"></script>
 ```
 
-This library provides the `SMTBaseBridge.ParentBridge` class used to establish communication with the child iframe.
+If that script is missing, bridge setup in `src/components/BridgedIframe.tsx` will fail and the container will not be able to communicate with the iframe.
 
 ## Configuration
 
-### App ID and Embedded Viewer URL
+Primary runtime configuration lives in `src/services/authService.ts`:
 
-Configure the App ID and Embedded Viewer URL in `src/services/authService.ts`:
+- `API_BASE_URL`
+- `APP_ID`
+- `EMBEDDED_VIEWER_URL`
 
-```typescript
+Current defaults:
+
+```ts
 export const API_BASE_URL = "https://b.smartmedialabs.io";
 export const APP_ID = "29512c85-0f45-44ff-a2d5-8269f2476116";
-export const EMBEDDED_VIEWER_URL = "https://embedded.smartmedialabs.io/visa-aero-blue/";
+export const EMBEDDED_VIEWER_URL = "https://embedded.smartmedialabs.io/visa-aero-blue-smart/v3/";
 ```
 
-**⚠️ IMPORTANT**: The `APP_ID` configured here **must match** the App ID that the embedded viewer is configured to use. Mismatched App IDs will cause authentication and communication failures.
+Important constraints:
 
-## Key Features
+- `APP_ID` must match the viewer configuration.
+- `EMBEDDED_VIEWER_URL` must point to the correct viewer deployment for the environment.
+- The container should treat the viewer URL as configuration, not as a hardcoded implementation detail.
 
-### 1. Login Flow
+## Authentication Pattern
 
-The login page (`src/pages/Login.tsx`) authenticates users via email and password:
+This sample authenticates users in the container and stores:
 
-```typescript
-const handleSubmit = async (e: FormEvent) => {
-  e.preventDefault();
-  setError('');
-  setLoading(true);
+- access token
+- refresh token
+- serialized user profile
 
-  try {
-    await login({ email, password });
-    navigate('/');
-  } catch (err) {
-    setError(err instanceof Error ? err.message : 'Login failed');
-  } finally {
-    setLoading(false);
-  }
-};
-```
+The reference implementation is in:
 
-The `authService.login()` method (`src/services/authService.ts`) makes an API call and stores the access token and refresh token:
+- `src/services/authService.ts`
+- `src/context/AuthContext.tsx`
+- `src/components/SignInModal.tsx`
 
-```typescript
-async login(credentials: LoginCredentials): Promise<AuthResponse> {
-  const payload: ApiLoginPayload = {
-    token: credentials.email,
-    token_type: "email",
-    auth_data: {
-      password: credentials.password,
-    },
-  };
+The key integration rule is:
 
-  const response = await fetch(`${API_BASE_URL}/v1/user/login`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "App-Id": APP_ID,
-    },
-    body: JSON.stringify(payload),
-  });
+- the container keeps ownership of authentication state
+- the viewer does not receive the access token directly from container UI flows
+- the viewer requests session information through the bridge when it needs it
 
-  if (!response.ok) {
-    throw new Error("Invalid email or password");
-  }
+## Bridge Contract
 
-  const data: ApiLoginResponse = await response.json();
-  const token = data.payload.access_token.token;
-  const refreshToken = data.payload.refresh_token.token;
+The parent bridge is created in `src/components/BridgedIframe.tsx`. In this sample, the important bridge handlers are:
 
-  // Store tokens in localStorage
-  localStorage.setItem(this.STORAGE_KEY, token);
-  localStorage.setItem(this.REFRESH_TOKEN_KEY, refreshToken);
-  localStorage.setItem(this.USER_KEY, JSON.stringify(user));
+- `session.get`
+  Returns the refresh token so the viewer can establish its own authenticated session.
+- `session.clear`
+  Allows the viewer to request container-side logout handling.
+- `session.signIn`
+  Allows the viewer to request an interactive sign-in flow from the container.
+- `navigation.go`
+  Allows the container to request viewer-side navigation without recreating the iframe.
+- `viewer.route.loading`
+- `viewer.route.error`
+- `frame.resize`
+  These let the viewer report loading, error, and layout information back to the container.
 
-  return { user, token, refreshToken };
-}
-```
+From a container-implementation perspective, the important principle is that the viewer is an external system. The container should respond to bridge messages and drive host-side behavior, but should not assume access to the viewer's internal code or router.
 
-### 2. Passing Auth to the Embedded Viewer
+## Navigation Pattern
 
-The `BridgedIframe` component (`src/components/BridgedIframe.tsx`) establishes communication with the embedded viewer and handles authentication requests:
+This sample uses a container-owned URL intent model for shell-driven viewer navigation. The container parses its own URL, derives viewer intent, and then translates that intent into bridge navigation or controlled iframe URL sync.
 
-```typescript
-useEffect(() => {
-  const iframe = iframeRef.current;
-  if (!iframe || !window.SMTBaseBridge) {
-    console.error("Iframe or SMTBaseBridge not available");
-    return;
-  }
+The reference implementation is in:
 
-  const childOrigin = new URL(src);
-  
-  // Create bridge using ParentBridge constructor
-  const bridge = new window.SMTBaseBridge.ParentBridge(iframe, {
-    origin: childOrigin.origin,
-    meta: {},
-  });
-  bridgeRef.current = bridge;
+- `src/pages/Main.tsx`
+- `src/navigation/viewerIntent.ts`
 
-  // Register session.get handler - provides refresh token to embedded viewer
-  bridge.addRequestHandler("session.get", async () => {
-    const refreshToken = authService.getRefreshToken();
-    console.log("session.get called, returning refreshToken");
-    return { refreshToken };
-  });
+The detailed navigation model is documented separately in `docs/NAVIGATION.md`.
 
-  // Register session.clear handler - handles logout from embedded viewer
-  bridge.addRequestHandler("session.clear", async () => {
-    console.log("session.clear called");
-    await authService.logout();
-    navigate("/login");
-    return {};
-  });
+That document should be treated as internal implementation guidance for this sample. Third-party implementers should use it as a pattern reference, not as a dependency on viewer internals.
 
-  // Set iframe src after bridge is configured
-  setIframeSrc(src);
+## File Guide
 
-  return () => {
-    // Cleanup handlers
-    if (bridgeRef.current) {
-      bridgeRef.current.removeRequestHandler("session.get");
-      bridgeRef.current.removeRequestHandler("session.clear");
-    }
-  };
-}, [src, navigate]);
-```
+Useful sample entry points in this repo:
 
-When the embedded viewer needs authentication, it calls `session.get` through the bridge, and the container responds with the refresh token.
+- `src/components/BridgedIframe.tsx`
+  Parent bridge setup and iframe integration boundary.
+- `src/pages/Main.tsx`
+  Host shell orchestration, URL-intent handling, and viewer lifecycle coordination.
+- `src/navigation/viewerIntent.ts`
+  URL parsing/serialization helpers for shell-driven viewer navigation.
+- `src/services/authService.ts`
+  Auth configuration and token persistence.
+- `src/components/SignInModal.tsx`
+  Example interactive sign-in flow owned by the container.
 
-### 3. Changing Features/Pages
+## Running
 
-The container app can navigate the embedded viewer to different features using the bridge's `sendRequest` method:
-
-**Main Page Navigation** (`src/pages/Main.tsx`):
-
-```typescript
-const handleGoToHome = async () => {
-  try {
-    await iframeRef.current?.goTo({ feature: "discover" });
-  } catch (error) {
-    console.error("Navigation to home failed:", error);
-  }
-};
-
-const handleGoToInventory = async () => {
-  try {
-    await iframeRef.current?.goTo({ feature: "inventory" });
-  } catch (error) {
-    console.error("Navigation to inventory failed:", error);
-  }
-};
-```
-
-**BridgedIframe Component** (`src/components/BridgedIframe.tsx`):
-
-```typescript
-// Expose goTo function via ref
-useImperativeHandle(ref, () => ({
-  goTo: async (params: {
-    feature: string;
-    focus?: string;
-    extra?: string;
-    params?: Record<string, any>;
-  }) => {
-    if (!bridgeRef.current) {
-      throw new Error("Bridge not initialized");
-    }
-    return bridgeRef.current.sendRequest("navigation.go", params);
-  },
-}));
-```
-
-The embedded viewer can also request navigation changes, which the container can approve or reject:
-
-```typescript
-bridge.addRequestHandler("navigation.go", async ({ payload }) => {
-  const { feature, focus, extra, params } = payload as {
-    feature: string;
-    focus: string;
-    extra: string;
-    params: Record<string, any>;
-  };
-
-  // Reject certain features
-  if (
-    feature === "ar" ||
-    feature === "ar-face-filter" ||
-    feature === "ar-wearable" ||
-    feature === "ar-engaged" ||
-    feature === "eight-wall"
-  ) {
-    alert("Request to goto " + feature + " rejected");
-    return {};
-  }
-  
-  // Approve supported routes
-  return { feature, focus, extra, params };
-});
-```
-
-### 4. Logout
-
-Logout can be initiated from either the container or the embedded viewer:
-
-**Container-Initiated Logout** (`src/pages/Main.tsx`):
-
-```typescript
-const handleLogout = async () => {
-  setLoading(true);
-  try {
-    await logout();
-    navigate("/login");
-  } catch (error) {
-    console.error("Logout failed:", error);
-  } finally {
-    setLoading(false);
-  }
-};
-```
-
-**Embedded Viewer-Initiated Logout** (handled in `BridgedIframe.tsx`):
-
-```typescript
-// Register session.clear handler
-bridge.addRequestHandler("session.clear", async () => {
-  console.log("session.clear called");
-  await authService.logout();
-  navigate("/login");
-  return {};
-});
-```
-
-The `authService.logout()` method clears all stored tokens:
-
-```typescript
-async logout(): Promise<void> {
-  localStorage.removeItem(this.STORAGE_KEY);
-  localStorage.removeItem(this.REFRESH_TOKEN_KEY);
-  localStorage.removeItem(this.USER_KEY);
-}
-```
-
-## Project Structure
-
-```
-visa-aero-blue-embedded/
-├── public/
-│   ├── index.html                    # Loads smt-base-bridge.min.js
-│   ├── smt-base-bridge.min.js        # Bridge library for iframe communication
-│   └── smt-base-bridge.min.js.map
-├── src/
-│   ├── components/
-│   │   ├── BridgedIframe.tsx         # Iframe component with bridge communication
-│   │   ├── Navbar.tsx                # Navigation bar with page switching
-│   │   └── ProtectedRoute.tsx        # Route protection wrapper
-│   ├── context/
-│   │   └── AuthContext.tsx           # Authentication context provider
-│   ├── pages/
-│   │   ├── Login.tsx                 # Login page
-│   │   └── Main.tsx                  # Main page with embedded viewer
-│   ├── services/
-│   │   └── authService.ts            # Authentication service (CONFIG HERE)
-│   ├── types/                        # TypeScript type definitions
-│   ├── App.tsx                       # Root application component
-│   └── index.tsx                     # Application entry point
-├── package.json
-└── webpack.config.js
-```
-
-## Installation & Running
-
-### Install Dependencies
+Install dependencies:
 
 ```bash
 yarn install
 ```
 
-### Development Server
+Start the dev server:
 
 ```bash
 yarn dev
 ```
 
-The app will be available at `https://localhost:3000`
-
-### Production Build
+Build for production:
 
 ```bash
 yarn build
 ```
-
-## Bridge Communication Flow
-
-1. **Container loads** the embedded viewer in an iframe
-2. **Bridge initialization**: `ParentBridge` is created with the iframe reference and origin
-3. **Request handlers registered**: Container registers handlers for `session.get`, `session.clear`, `navigation.go`, etc.
-4. **Embedded viewer requests auth**: Calls `session.get` through the bridge
-5. **Container responds**: Returns the refresh token
-6. **Embedded viewer authenticates**: Uses the refresh token to obtain access tokens
-7. **Navigation requests**: Either side can request navigation changes through the bridge
-8. **Logout coordination**: Either side can initiate logout, which is handled by both
-
-## Technologies Used
-
-- **React 19** - UI framework
-- **TypeScript** - Type safety
-- **React Router** - Client-side routing
-- **Tailwind CSS** - Styling
-- **smt-base-bridge** - Iframe communication library
-- **Webpack** - Module bundler
-
-## License
-
-Apache-2.0

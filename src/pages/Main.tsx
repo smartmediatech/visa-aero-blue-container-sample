@@ -6,6 +6,15 @@ import { BridgedIframe } from "../components/BridgedIframe";
 import type { BridgedIframeHandle } from "../components/BridgedIframe";
 import Navbar from "../components/Navbar";
 import { Footer } from "../components/Footer";
+import {
+  appendRouteKeyToViewerPath,
+  createDefaultViewerIntent,
+  createFeatureIntent,
+  isViewerFeature,
+  updateViewerIntentLang,
+  updateViewerIntentRegion,
+} from "../navigation/viewerIntent";
+import { useViewerIntent } from "../navigation/useViewerIntent";
 
 const pages = [
   { id: "benefits", label: "Benefits" },
@@ -22,33 +31,35 @@ type LayoutPhase =
   | "ready"
   | "error";
 
-interface ViewerErrorState {
-  code?: string;
-  message?: string;
-  retryable?: boolean;
-}
-
+type ShellErrorState =
+  | { type: "viewer"; code?: string; message?: string; retryable?: boolean }
+  | { type: "invalid_intent"; message: string };
 
 export const Main = () => {
-  const [loading, setLoading] = useState(false);
-  const { user, logout, isAuthenticated } = useAuth();
+  const { user, logout, isAuthenticated, loading: authLoading } = useAuth();
+  const {
+    parsedViewerIntent,
+    currentViewerIntent,
+    effectiveViewerIntent,
+    activePage,
+    region,
+    lang,
+    defaultRegion,
+    defaultLang,
+    writeViewerIntent,
+    shouldNavigate,
+    markIntentApplied,
+    resetAppliedIntent,
+  } = useViewerIntent({ isAuthenticated, authLoading });
+
   const iframeRef = useRef<BridgedIframeHandle>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
   const footerRef = useRef<HTMLDivElement | null>(null);
-  const [activePage, setPage] = useState<string>(() =>
-    authService.isAuthenticated() ? "home" : "landing"
-  );
-  const [region, setRegion] = useState<string>(
-    () => localStorage.getItem("preferredRegion") || "germany",
-  );
-  const [lang, setLang] = useState<string>(
-    () => localStorage.getItem("preferredLang") || "en",
-  );
   const [showSignIn, setShowSignIn] = useState(false);
   const signInResolveRef = useRef<((result: { refreshToken: string | null }) => void) | null>(null);
   const [lastMeasuredViewerHeight, setLastMeasuredViewerHeight] = useState<number | null>(null);
   const [layoutPhase, setLayoutPhase] = useState<LayoutPhase>("cold_loading");
-  const [viewerError, setViewerError] = useState<ViewerErrorState | null>(null);
+  const [shellError, setShellError] = useState<ShellErrorState | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const [activeRouteKey, setActiveRouteKey] = useState<string | null>(null);
   const activeRouteKeyRef = useRef<string | null>(null);
@@ -57,6 +68,7 @@ export const Main = () => {
   const [viewportHeight, setViewportHeight] = useState<number>(() => window.innerHeight);
   const [headerHeight, setHeaderHeight] = useState(0);
   const [footerHeight, setFooterHeight] = useState(DEFAULT_FOOTER_HEIGHT);
+  const [iframeSrc, setIframeSrc] = useState<string | null>(null);
   const routeSettledTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -69,6 +81,15 @@ export const Main = () => {
     return () => {
       if (routeSettledTimeoutRef.current !== null) {
         window.clearTimeout(routeSettledTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (signInResolveRef.current) {
+        signInResolveRef.current({ refreshToken: null });
+        signInResolveRef.current = null;
       }
     };
   }, []);
@@ -126,33 +147,23 @@ export const Main = () => {
 
   const baseUrl = authService.getEmbeddedViewerUrl();
 
-  const buildIframeUrl = useCallback(
-    (page: string, reg: string, lng: string, routeKey?: string | null) => {
+  const buildFeatureIframeUrl = useCallback(
+    (feature: string, reg: string, lng: string, routeKey?: string | null) => {
       const params = new URLSearchParams({ lang: lng });
       if (routeKey) {
         params.set("routeKey", routeKey);
       }
-      return `${baseUrl}#/${reg}/${page}?${params.toString()}`;
+      return `${baseUrl}#/${reg}/${feature}?${params.toString()}`;
     },
     [baseUrl],
   );
 
-  const initialRouteKey = useRef(createRouteKey());
-  const [iframeSrc, setIframeSrc] = useState(() =>
-    buildIframeUrl(activePage, region, lang, initialRouteKey.current),
-  );
-
-  useEffect(() => {
-    setActiveRouteKey(initialRouteKey.current);
-    activeRouteKeyRef.current = initialRouteKey.current;
-  }, []);
-
-  const navigateIframe = useCallback(
-    (page: string, reg: string, lng: string, routeKey?: string | null) => {
-      setViewerError(null);
-      setIframeSrc(buildIframeUrl(page, reg, lng, routeKey));
+  const buildPathIframeUrl = useCallback(
+    (path: string, routeKey?: string | null) => {
+      const nextPath = routeKey ? appendRouteKeyToViewerPath(path, routeKey) : path;
+      return `${baseUrl}#${nextPath}`;
     },
-    [buildIframeUrl],
+    [baseUrl],
   );
 
   const clearRouteSettledTimeout = useCallback(() => {
@@ -175,20 +186,13 @@ export const Main = () => {
     }, 1500);
   }, [clearRouteSettledTimeout]);
 
-  const startNavigation = useCallback(
-    async (
-      page: string,
-      reg: string,
-      lng: string,
-      options?: { forceReload?: boolean; keepFooterVisible?: boolean },
-    ) => {
-      const isSameRouteIdentity =
-        page === activePage && reg === region && lng === lang;
+  const prepareNavigation = useCallback(
+    (isSameRouteIdentity: boolean, options?: { keepFooterVisible?: boolean }) => {
       const routeKey = createRouteKey();
       setActiveRouteKey(routeKey);
       activeRouteKeyRef.current = routeKey;
       pendingContainerRouteKeyRef.current = routeKey;
-      setViewerError(null);
+      setShellError(null);
       setShowLoadingCover(!isSameRouteIdentity);
 
       if (isSameRouteIdentity && lastMeasuredViewerHeight !== null) {
@@ -200,24 +204,111 @@ export const Main = () => {
         setLayoutPhase("loading_with_previous_height");
       }
 
-      if (options?.forceReload) {
-        navigateIframe(page, reg, lng, routeKey);
+      return routeKey;
+    },
+    [armRouteSettledTimeout, createRouteKey, lastMeasuredViewerHeight],
+  );
+
+  const navigateFeatureIntent = useCallback(
+    async (
+      feature: string,
+      reg: string,
+      lng: string,
+      options?: { forceReload?: boolean; keepFooterVisible?: boolean },
+    ) => {
+      const isSameRouteIdentity =
+        currentViewerIntent?.kind === "feature" &&
+        currentViewerIntent.feature === feature &&
+        currentViewerIntent.region === reg &&
+        currentViewerIntent.lang === lng;
+      const routeKey = prepareNavigation(isSameRouteIdentity, options);
+      const nextIframeSrc = buildFeatureIframeUrl(feature, reg, lng, routeKey);
+
+      if (options?.forceReload || !iframeRef.current || !iframeSrc) {
+        setIframeSrc(nextIframeSrc);
         return;
       }
 
       try {
         await iframeRef.current?.goTo({
-          feature: page,
+          feature,
           routeKey,
           params: { region: reg, lang: lng },
         });
       } catch {
         console.warn("[container] Bridge nav failed, falling back to src sync");
-        navigateIframe(page, reg, lng, routeKey);
+        setIframeSrc(nextIframeSrc);
       }
     },
-    [activePage, armRouteSettledTimeout, createRouteKey, lang, lastMeasuredViewerHeight, navigateIframe, region],
+    [buildFeatureIframeUrl, currentViewerIntent, iframeSrc, prepareNavigation],
   );
+
+  const navigatePathIntent = useCallback(
+    (
+      path: string,
+      options?: { keepFooterVisible?: boolean },
+    ) => {
+      const isSameRouteIdentity =
+        currentViewerIntent?.kind === "path" && currentViewerIntent.path === path;
+      const routeKey = prepareNavigation(isSameRouteIdentity, options);
+      setIframeSrc(buildPathIframeUrl(path, routeKey));
+    },
+    [buildPathIframeUrl, currentViewerIntent, prepareNavigation],
+  );
+
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (parsedViewerIntent.kind === "other-target") {
+      clearRouteSettledTimeout();
+      pendingContainerRouteKeyRef.current = null;
+      setShowLoadingCover(false);
+      setLayoutPhase("error");
+      setShellError({
+        type: "invalid_intent",
+        message: `Unsupported target "${parsedViewerIntent.target}".`,
+      });
+      return;
+    }
+
+    if (parsedViewerIntent.kind === "invalid") {
+      clearRouteSettledTimeout();
+      pendingContainerRouteKeyRef.current = null;
+      setShowLoadingCover(false);
+      setLayoutPhase("error");
+      setShellError({
+        type: "invalid_intent",
+        message: parsedViewerIntent.message,
+      });
+      return;
+    }
+
+    if (parsedViewerIntent.kind !== "viewer") return;
+
+    setShellError((prev) => prev?.type === "invalid_intent" ? null : prev);
+
+    if (!shouldNavigate(parsedViewerIntent.intent)) return;
+    markIntentApplied(parsedViewerIntent.intent);
+
+    if (parsedViewerIntent.intent.kind === "feature") {
+      void navigateFeatureIntent(
+        parsedViewerIntent.intent.feature,
+        parsedViewerIntent.intent.region,
+        parsedViewerIntent.intent.lang,
+      );
+      return;
+    }
+
+    navigatePathIntent(parsedViewerIntent.intent.path);
+  }, [
+    authLoading,
+    clearRouteSettledTimeout,
+    markIntentApplied,
+    navigateFeatureIntent,
+    navigatePathIntent,
+    parsedViewerIntent,
+    shouldNavigate,
+  ]);
 
   const handleRouteError = useCallback((payload: {
     routeKey?: string;
@@ -235,7 +326,8 @@ export const Main = () => {
       return;
     }
 
-    setViewerError({
+    setShellError({
+      type: "viewer",
       code: payload.code,
       message: payload.message,
       retryable: payload.retryable,
@@ -256,7 +348,7 @@ export const Main = () => {
       activeRouteKeyRef.current = routeKey;
     }
 
-    setViewerError(null);
+    setShellError((prev) => prev?.type === "viewer" ? null : prev);
     setShowLoadingCover((prev) => (
       prev || routeKey !== pendingContainerRouteKeyRef.current
     ));
@@ -300,42 +392,33 @@ export const Main = () => {
     });
     clearRouteSettledTimeout();
     pendingContainerRouteKeyRef.current = null;
-    setViewerError(null);
+    setShellError((prev) => prev?.type === "viewer" ? null : prev);
     setShowLoadingCover(false);
     setLayoutPhase("ready");
   }, [activeRouteKey, clearRouteSettledTimeout]);
+
+  const doLogout = useCallback(async () => {
+    await logout();
+    setShowSignIn(false);
+    setRetryKey((k) => k + 1);
+    resetAppliedIntent();
+    writeViewerIntent(createFeatureIntent("landing", region, lang));
+  }, [lang, logout, region, resetAppliedIntent, writeViewerIntent]);
 
   const handleSessionClear = useCallback(async () => {
     if (!authService.isAuthenticated()) {
       return;
     }
+    await doLogout();
+  }, [doLogout]);
 
-    await logout();
-    setPage("landing");
-    setShowSignIn(false);
-    setRetryKey((k) => k + 1);
-    await startNavigation("landing", region, lang, {
-      forceReload: true,
-      keepFooterVisible: lastMeasuredViewerHeight !== null,
-    });
-  }, [lang, lastMeasuredViewerHeight, logout, region, startNavigation]);
-
-  const handleLogout = async () => {
-    setLoading(true);
+  const handleLogout = useCallback(async () => {
     try {
-      await logout();
-      setPage("landing");
-      setRetryKey((k) => k + 1);
-      await startNavigation("landing", region, lang, {
-        forceReload: true,
-        keepFooterVisible: lastMeasuredViewerHeight !== null,
-      });
+      await doLogout();
     } catch (error) {
       console.error("Logout failed:", error);
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [doLogout]);
 
   const handleSignInSuccess = () => {
     setShowSignIn(false);
@@ -346,8 +429,7 @@ export const Main = () => {
       return;
     }
 
-    setPage("home");
-    void startNavigation("home", region, lang);
+    writeViewerIntent(createFeatureIntent("home", region, lang));
   };
 
   const handleSignInClose = () => {
@@ -366,50 +448,96 @@ export const Main = () => {
   }, []);
 
   const handlePageNavigation = useCallback(
-    async (pageId: string) => {
-      const viewerPages = ["benefits", "travel", "concierge", "watchlist", "home", "landing"];
-      if (!viewerPages.includes(pageId)) {
+    (pageId: string) => {
+      if (!isViewerFeature(pageId)) {
         console.warn(`[container] No viewer route for "${pageId}"`);
         return;
       }
 
-      setPage(pageId);
-      await startNavigation(pageId, region, lang);
+      writeViewerIntent(createFeatureIntent(pageId, region, lang));
     },
-    [lang, region, startNavigation],
+    [lang, region, writeViewerIntent],
   );
 
   const handleCountryChange = useCallback(
     (slug: string) => {
       if (slug === region) return;
-      setRegion(slug);
       localStorage.setItem("preferredRegion", slug);
-      void startNavigation(activePage, slug, lang, {
-        keepFooterVisible: layoutPhase === "error",
-      });
+      const nextIntent = effectiveViewerIntent
+        ? updateViewerIntentRegion(effectiveViewerIntent, slug, {
+            region: defaultRegion,
+            lang: defaultLang,
+          })
+        : createDefaultViewerIntent(isAuthenticated, {
+            region: slug,
+            lang,
+          });
+      writeViewerIntent(nextIntent);
     },
-    [activePage, lang, layoutPhase, region, startNavigation],
+    [defaultLang, defaultRegion, effectiveViewerIntent, isAuthenticated, lang, region, writeViewerIntent],
   );
 
   const handleLangChange = useCallback(
     (newLang: string) => {
       if (newLang === lang) return;
-      setLang(newLang);
       localStorage.setItem("preferredLang", newLang);
-      void startNavigation(activePage, region, newLang, {
-        keepFooterVisible: layoutPhase === "error",
-      });
+      const nextIntent = effectiveViewerIntent
+        ? updateViewerIntentLang(effectiveViewerIntent, newLang, {
+            region: defaultRegion,
+            lang: defaultLang,
+          })
+        : createDefaultViewerIntent(isAuthenticated, {
+            region,
+            lang: newLang,
+          });
+      writeViewerIntent(nextIntent);
     },
-    [activePage, lang, layoutPhase, region, startNavigation],
+    [defaultLang, defaultRegion, effectiveViewerIntent, isAuthenticated, lang, region, writeViewerIntent],
   );
 
   const handleRetry = useCallback(() => {
+    if (shellError?.type === "invalid_intent") {
+      writeViewerIntent(
+        createDefaultViewerIntent(isAuthenticated, {
+          region: defaultRegion,
+          lang: defaultLang,
+        }),
+      );
+      return;
+    }
+
+    if (!currentViewerIntent) {
+      return;
+    }
+
     setRetryKey((k) => k + 1);
-    void startNavigation(activePage, region, lang, {
-      forceReload: true,
+    resetAppliedIntent();
+
+    if (currentViewerIntent.kind === "feature") {
+      void navigateFeatureIntent(
+        currentViewerIntent.feature,
+        currentViewerIntent.region,
+        currentViewerIntent.lang,
+        { forceReload: true, keepFooterVisible: layoutPhase === "error" },
+      );
+      return;
+    }
+
+    navigatePathIntent(currentViewerIntent.path, {
       keepFooterVisible: layoutPhase === "error",
     });
-  }, [activePage, lang, layoutPhase, region, startNavigation]);
+  }, [
+    currentViewerIntent,
+    defaultLang,
+    defaultRegion,
+    isAuthenticated,
+    layoutPhase,
+    navigateFeatureIntent,
+    navigatePathIntent,
+    resetAppliedIntent,
+    shellError,
+    writeViewerIntent,
+  ]);
 
   const shellStyle = useMemo(
     () => ({ minHeight: `${currentShellHeight}px` }),
@@ -419,8 +547,9 @@ export const Main = () => {
   const showPlaceholder =
     layoutPhase === "cold_loading" ||
     (layoutPhase === "loading_with_previous_height" && showLoadingCover);
-  const showError = layoutPhase === "error" && !!viewerError;
-  const errorMessage = viewerError?.message || "The content couldn't be loaded. Please try again.";
+  const showError = layoutPhase === "error" && !!shellError;
+  const errorMessage = shellError?.message || "The content couldn't be loaded. Please try again.";
+  const errorActionLabel = shellError?.type === "invalid_intent" ? "Reset URL" : "Retry";
 
   return (
     <div className="flex min-h-screen flex-col bg-white">
@@ -461,19 +590,21 @@ export const Main = () => {
 
       <main id="main-content" tabIndex={-1} className="flex-none">
         <div className="relative bg-white" style={shellStyle}>
-          <BridgedIframe
-            key={retryKey}
-            ref={iframeRef}
-            src={iframeSrc}
-            className="w-full border-0"
-            onLoadError={handleLoadError}
-            onRouteLoading={handleRouteLoading}
-            onRouteError={handleRouteError}
-            onLayoutStable={handleLayoutStable}
-            onSessionClear={handleSessionClear}
-            onSignInRequest={handleSignInRequest}
-            style={{ height: `${currentShellHeight}px` }}
-          />
+          {iframeSrc && (
+            <BridgedIframe
+              key={retryKey}
+              ref={iframeRef}
+              src={iframeSrc}
+              className="w-full border-0"
+              onLoadError={handleLoadError}
+              onRouteLoading={handleRouteLoading}
+              onRouteError={handleRouteError}
+              onLayoutStable={handleLayoutStable}
+              onSessionClear={handleSessionClear}
+              onSignInRequest={handleSignInRequest}
+              style={{ height: `${currentShellHeight}px` }}
+            />
+          )}
 
           {showPlaceholder && (
             <div className="absolute inset-0 flex items-center justify-center bg-white">
@@ -494,7 +625,7 @@ export const Main = () => {
                   onClick={handleRetry}
                   className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100"
                 >
-                  Retry
+                  {errorActionLabel}
                 </button>
               </div>
             </div>
